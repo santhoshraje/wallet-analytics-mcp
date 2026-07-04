@@ -17,6 +17,17 @@ MCP server for analyzing on-chain wallet swap transactions. Fetches and parses s
 - **Currency-agnostic filters** — `min_amount_sent`/`received` work on any token, not just SOL
 - **RPC auto-detection** — Single `SOLANA_RPC_URL` config; detects provider from URL
 
+## Supported Chains
+
+| Chain | Status | Env Var |
+|-------|--------|---------|
+| Solana | ✅ Implemented | `SOLANA_RPC_URL` |
+| Ethereum | 🔜 Planned | `ETH_RPC_URL` |
+| Base | 🔜 Planned | `BASE_RPC_URL` |
+| BSC | 🔜 Planned | `BSC_RPC_URL` |
+
+The parser is chain-agnostic in design — swap detection logic applies to any EVM or Solana wallet. New chains are added by extending the transaction parsing module.
+
 ## Installation
 
 ```bash
