@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wallet-analytics-mcp"
+version = "0.1.0"
+description = "MCP server for analyzing on-chain wallet swap transactions"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+dependencies = [
+    "mcp>=1.28.0",
+    "solana>=0.36.0",
+    "solders>=0.25.0",
+]
+
+[project.scripts]
+wallet-analytics-mcp = "wallet_analytics_mcp:main"
