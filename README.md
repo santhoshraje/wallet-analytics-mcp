@@ -28,6 +28,23 @@ MCP server for retriving on-chain wallet swap transactions. Fetches and parses s
 
 The parser is chain-agnostic in design — swap detection logic applies to any EVM or Solana wallet. New chains are added by extending the transaction parsing module.
 
+## Use Cases
+
+### Copy Trading
+Track a profitable wallet's swaps in real-time and mirror their trades. Use `token_type_filter="meme"` to focus on high-risk, high-reward plays.
+
+### Wallet Profiling
+Analyze a wallet's trading patterns — preferred DEX, typical position sizes, token preferences — to assess strategy and risk profile.
+
+### Alpha Discovery
+Scan wallets connected to new token launches. Filter with `exclude_categories=["transfer", "staking"]` to isolate pure swap activity.
+
+### DeFi Analytics
+Aggregate swap volume across a portfolio of wallets. Use `min_amount_sent` to filter out dust trades and focus on meaningful positions.
+
+### Stablecoin Flow Tracking
+Monitor large stablecoin movements with `token_type_filter="stablecoin"` and `min_amount_sent=10000` to detect capital inflows/outflows.
+
 ## Installation
 
 ```bash
