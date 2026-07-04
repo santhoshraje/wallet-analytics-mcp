@@ -20,27 +20,31 @@ Add to your `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "mcpServers": {
+  "mcp": {
     "wallet-analytics": {
-      "command": "uvx",
-      "args": ["wallet-analytics-mcp"]
+      "type": "local",
+      "command": ["uvx", "wallet-analytics-mcp"],
+      "environment": {
+        "SOLANA_RPC_URL": "https://your-rpc-endpoint"
+      }
     }
   }
 }
 ```
 
+The `environment` block passes env vars directly to the MCP server process — no need to export them globally.
+
 ## Configuration
 
-All settings via environment variables:
+All settings via environment variables (set in `opencode.json` under `"environment"`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ALCHEMY_URL` | — | Alchemy RPC endpoint (required for default provider) |
-| `SOLANA_RPC_PROVIDER` | `ALCHEMY_CLIENT` | Active provider |
+| `SOLANA_RPC_URL` | Solana public RPC | Any Solana RPC endpoint (Alchemy, Helius, etc.) |
 | `SOLANA_RPC_TIMEOUT` | `30` | RPC timeout in seconds |
 | `SOLANA_TX_LIMIT` | `30000` | Max transactions per wallet |
 
-Available providers: `ALCHEMY_CLIENT`, `QUICKNODE_CLIENT`, `HELIUS_CLIENT`, `CHAINSTACK_CLIENT`, `DRPC_CLIENT`, `SYNDICA_CLIENT`, `SOLANA_PUBLIC_CLIENT`
+Point `SOLANA_RPC_URL` at any provider — Alchemy, Helius, QuickNode, etc. Falls back to Solana public if not set.
 
 ## Available Tools
 

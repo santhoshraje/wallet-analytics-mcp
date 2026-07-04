@@ -19,14 +19,7 @@ def _env_int(key: str, fallback: int) -> int:
 TIMEOUT = _env_int("SOLANA_RPC_TIMEOUT", 30)
 TRANSACTION_LIMIT = _env_int("SOLANA_TX_LIMIT", 30000)
 
-# RPC provider URLs (set via env vars)
-SOLANA_PUBLIC_RPC = _env("SOLANA_PUBLIC_RPC", "https://api.mainnet-beta.solana.com")
-ALCHEMY_URL = _env("ALCHEMY_URL")
-QUICKNODE_URL = _env("QUICKNODE_URL")
-HELIUS_URL = _env("HELIUS_URL")
-CHAINSTACK_URL = _env("CHAINSTACK_URL")
-DRPC_URL = _env("DRPC_URL")
-SYNDICA_URL = _env("SYNDICA_URL")
+# RPC endpoint (set via env var, any provider URL)
+SOLANA_RPC_URL = _env("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 
-# Active provider: SOLANA_PUBLIC_CLIENT, ALCHEMY_CLIENT, QUICKNODE_CLIENT, HELIUS_CLIENT, CHAINSTACK_CLIENT, DRPC_CLIENT, SYNDICA_CLIENT
-NODE_PROVIDER = _env("SOLANA_RPC_PROVIDER", "ALCHEMY_CLIENT")
+
