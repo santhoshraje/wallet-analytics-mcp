@@ -5,7 +5,10 @@ import os
 
 def _env(key: str, fallback: str | None = None) -> str | None:
     """Read from environment variable with optional fallback."""
-    return os.getenv(key, fallback)
+    val = os.getenv(key)
+    if val and val.strip():
+        return val
+    return fallback
 
 
 def _env_int(key: str, fallback: int) -> int:
