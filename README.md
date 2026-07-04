@@ -3,6 +3,8 @@
 [![PyPI](https://img.shields.io/pypi/v/wallet-analytics-mcp)](https://pypi.org/project/wallet-analytics-mcp/)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Coverage](https://img.shields.io/badge/coverage-82%25-yellowgreen)](tests/)
+[![Last Commit](https://img.shields.io/github/last-commit/santhoshraje/wallet-analytics-mcp)](https://github.com/santhoshraje/wallet-analytics-mcp/commits/main)
 
 MCP server for analyzing on-chain wallet swap transactions. Fetches and parses swap data from Solana wallets for copy-trading decisions.
 
