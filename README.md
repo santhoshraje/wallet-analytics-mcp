@@ -14,17 +14,32 @@ Or via uv:
 uv pip install wallet-analytics-mcp
 ```
 
-## Usage with opencode
+## Usage
 
-Add to your `~/.config/opencode/opencode.json`:
+Install and run via `uvx`:
+
+```bash
+uvx wallet-analytics-mcp
+```
+
+Or install globally:
+
+```bash
+pip install wallet-analytics-mcp
+python -m wallet_analytics_mcp
+```
+
+### Configuring an MCP Client
+
+Add to your client's MCP configuration. Example for Claude Desktop (`~/.claude/claude_desktop_config.json`):
 
 ```json
 {
-  "mcp": {
+  "mcpServers": {
     "wallet-analytics": {
-      "type": "local",
-      "command": ["uvx", "wallet-analytics-mcp"],
-      "environment": {
+      "command": "uvx",
+      "args": ["wallet-analytics-mcp"],
+      "env": {
         "SOLANA_RPC_URL": "https://your-rpc-endpoint"
       }
     }
@@ -32,11 +47,11 @@ Add to your `~/.config/opencode/opencode.json`:
 }
 ```
 
-The `environment` block passes env vars directly to the MCP server process — no need to export them globally.
+The `env` block passes variables directly to the server subprocess — no need to export them globally. Other MCP-compatible clients (Cursor, Windsurf, Cline, etc.) use the same JSON config format.
 
 ## Configuration
 
-All settings via environment variables (set in `opencode.json` under `"environment"`):
+All settings via environment variables (set in your client's config under `"env"`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
