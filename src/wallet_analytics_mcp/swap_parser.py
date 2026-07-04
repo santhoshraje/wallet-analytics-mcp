@@ -6,12 +6,11 @@ from solders.pubkey import Pubkey
 from datetime import datetime, timezone
 import logging
 from wallet_analytics_mcp.swap import Swap
-from wallet_analytics_mcp.config import TRANSACTION_LIMIT
+from wallet_analytics_mcp.config import TRANSACTION_LIMIT, BASE_CURRENCIES
 
 
 sol_address = "So11111111111111111111111111111111111111112"
 usdc_address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-usdt_address = ""
 
 
 def _rpc_retry(func, max_attempts: int = 3, logger=None):
@@ -153,14 +152,10 @@ class SwapParser:
 
         pre_dict: dict[str, float] = {}
         post_dict: dict[str, float] = {}
-        sol_found = False
 
         for balance in preTokenBalances:
             current_mint = balance["mint"]
             current_owner = balance["owner"]
-
-            if current_mint == sol_address:
-                sol_found = True
 
             if current_owner != str(self.wallet_address):
                 continue
@@ -168,10 +163,6 @@ class SwapParser:
             preTokenBalance = balance["uiTokenAmount"]["uiAmount"]
             preTokenBalance = float(preTokenBalance) if preTokenBalance is not None else 0
             pre_dict[current_mint] = preTokenBalance
-
-        # Must have SOL involvement
-        if not sol_found:
-            return
 
         for balance in postTokenBalances:
             current_mint = balance["mint"]
@@ -239,18 +230,6 @@ class SwapParser:
 
         if (swap.quantityReceived_ is not None and swap.quantityReceived_ < 0) or \
            (swap.quantitySent_ is not None and swap.quantitySent_ < 0):
-            return
-
-        # Require at least one token to be a base currency
-        stablecoin_addresses = {sol_address, usdc_address}
-        if usdt_address:
-            stablecoin_addresses.add(usdt_address)
-
-        if swap.tokenReceived_ not in stablecoin_addresses and swap.tokenSent_ not in stablecoin_addresses:
-            return
-
-        # Ignore direct stablecoin-to-stablecoin swaps
-        if swap.tokenReceived_ in stablecoin_addresses and swap.tokenSent_ in stablecoin_addresses:
             return
 
         swap.signature_ = json_data["transaction"]["signatures"][0]

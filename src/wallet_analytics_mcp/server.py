@@ -29,6 +29,7 @@ logger = logging.getLogger("wallet-analytics-mcp")
 from mcp.server.fastmcp import FastMCP
 from wallet_analytics_mcp.swap_parser import SwapParser
 from wallet_analytics_mcp.provider import get_client, clear_cache
+from wallet_analytics_mcp.config import BASE_CURRENCIES
 
 
 @asynccontextmanager
@@ -51,17 +52,26 @@ def get_raw_transactions(
     wallet_address: str,
     start_date: str | None = None,
     end_date: str | None = None,
+    filter_stablecoin_pairs: bool = False,
+    require_base_currency: bool = False,
+    min_volume_sol: float | None = None,
 ):
     """Fetch raw swap transactions for a Solana wallet address.
+
+    Returns all detected swaps by default. Use optional filters to narrow results.
 
     Args:
         wallet_address: Solana wallet public key (base58).
         start_date: ISO 8601 date string (default: 30 days ago).
         end_date: ISO 8601 date string (default: now).
+        filter_stablecoin_pairs: Drop swaps where both tokens are base currencies (SOL/USDC).
+        require_base_currency: Keep only swaps involving at least one base currency.
+        min_volume_sol: Minimum SOL received/sent to include the swap.
     """
     t0 = time.time()
     logger.info("=== get_raw_transactions START ===")
     logger.info("wallet=%s, start=%s, end=%s", wallet_address, start_date, end_date)
+    logger.info("filters: stablecoin_pairs=%s, base_currency=%s, min_volume=%s", filter_stablecoin_pairs, require_base_currency, min_volume_sol)
 
     if start_date:
         sd = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
@@ -90,7 +100,18 @@ def get_raw_transactions(
     swaps = parser.process_wallet()
     if swaps is None:
         swaps = []
-    logger.info("process_wallet done in %.2fs", time.time() - t_process)
+    logger.info("process_wallet done in %.2fs, %d raw swaps", time.time() - t_process, len(swaps))
+
+    # Apply optional filters
+    before_count = len(swaps)
+    if require_base_currency:
+        swaps = [s for s in swaps if s.tokenReceived_ in BASE_CURRENCIES or s.tokenSent_ in BASE_CURRENCIES]
+    if filter_stablecoin_pairs:
+        swaps = [s for s in swaps if not (s.tokenReceived_ in BASE_CURRENCIES and s.tokenSent_ in BASE_CURRENCIES)]
+    if min_volume_sol is not None:
+        swaps = [s for s in swaps if (s.quantityReceived_ or 0) >= min_volume_sol or (s.quantitySent_ or 0) >= min_volume_sol]
+    if before_count > len(swaps):
+        logger.info("filters applied: %d -> %d swaps", before_count, len(swaps))
 
     elapsed = time.time() - t0
     logger.info("get_raw_transactions done: %d swaps, total %.1fs", len(swaps), elapsed)
@@ -99,6 +120,11 @@ def get_raw_transactions(
     return {
         "wallet": wallet_address,
         "swap_count": len(swaps),
+        "filters_applied": {
+            "filter_stablecoin_pairs": filter_stablecoin_pairs,
+            "require_base_currency": require_base_currency,
+            "min_volume_sol": min_volume_sol,
+        },
         "swaps": [
             {
                 "signature": s.signature_,

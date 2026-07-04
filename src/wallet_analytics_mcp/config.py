@@ -22,4 +22,9 @@ TRANSACTION_LIMIT = _env_int("SOLANA_TX_LIMIT", 30000)
 # RPC endpoint (set via env var, any provider URL)
 SOLANA_RPC_URL = _env("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 
+# Base currencies for optional filtering
+BASE_CURRENCIES = {
+    "So11111111111111111111111111111111111111112",  # SOL
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+}
 

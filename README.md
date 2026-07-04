@@ -50,14 +50,21 @@ Point `SOLANA_RPC_URL` at any provider — Alchemy, Helius, QuickNode, etc. Fall
 
 ### `get_raw_transactions`
 
-Fetch swap transactions for a wallet address.
+Fetch all detected swap transactions for a wallet address. By default returns every swap regardless of token pair. Optional filters let the LLM narrow results.
 
 **Parameters:**
 - `wallet_address` (required): Solana wallet public key (base58)
 - `start_date` (optional): ISO 8601 date string (default: 30 days ago)
 - `end_date` (optional): ISO 8601 date string (default: now)
+- `filter_stablecoin_pairs` (optional, default: `False`): Drop swaps where both tokens are base currencies (SOL/USDC). Use to remove SOL→USDC and USDC→SOL noise.
+- `require_base_currency` (optional, default: `False`): Keep only swaps involving at least one base currency (SOL or USDC). Drops meme-to-meme swaps like BONK→WIF.
+- `min_volume_sol` (optional): Minimum SOL amount received or sent to include the swap.
 
-**Returns:** List of swaps with token pairs, quantities, timestamps, and signatures.
+**Returns:** List of swaps with token pairs, quantities, timestamps, and signatures. Response includes `filters_applied` showing which filters were active.
+
+## Design
+
+The parser returns all detected swaps — no hard-coded drops. Filtering happens at the tool level so the LLM decides what's relevant. This catches USDC→meme swaps, meme-to-meme trades, and any other token pair.
 
 ## Logging
 
