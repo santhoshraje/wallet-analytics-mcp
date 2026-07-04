@@ -6,7 +6,15 @@ from solders.pubkey import Pubkey
 from datetime import datetime, timezone
 import logging
 from wallet_analytics_mcp.swap import Swap
-from wallet_analytics_mcp.config import TRANSACTION_LIMIT, BASE_CURRENCIES
+from wallet_analytics_mcp.config import (
+    TRANSACTION_LIMIT,
+    BASE_CURRENCIES,
+    DEX_PROGRAMS,
+    TOKEN_SYMBOLS,
+    SPL_TOKEN_PROGRAM,
+    STAKE_PROGRAM,
+    NFT_METADATA_PROGRAM,
+)
 
 
 sol_address = "So11111111111111111111111111111111111111112"
@@ -46,6 +54,55 @@ class SwapParser:
         self.logger = logging.getLogger(__name__)
         self.start_date = start
         self.end_date = end
+
+    def __detect_dex(self, json_data: dict) -> str | None:
+        """Find which DEX program was called in this transaction."""
+        account_keys = json_data["transaction"]["message"]["accountKeys"]
+        instructions = json_data["transaction"]["message"].get("instructions", [])
+        for ix in instructions:
+            prog_idx = ix.get("programIdIndex")
+            if prog_idx is not None and prog_idx < len(account_keys):
+                prog_id = account_keys[prog_idx]
+                if prog_id in DEX_PROGRAMS:
+                    return DEX_PROGRAMS[prog_id]
+        inner = json_data["meta"].get("innerInstructions", [])
+        for group in inner:
+            for ix in group.get("instructions", []):
+                prog_idx = ix.get("programIdIndex")
+                if prog_idx is not None and prog_idx < len(account_keys):
+                    prog_id = account_keys[prog_idx]
+                    if prog_id in DEX_PROGRAMS:
+                        return DEX_PROGRAMS[prog_id]
+        return "unknown"
+
+    def __detect_category(self, json_data: dict) -> str:
+        """Classify transaction as 'swap', 'transfer', 'staking', 'nft', or 'other'."""
+        account_keys = json_data["transaction"]["message"]["accountKeys"]
+        instructions = json_data["transaction"]["message"].get("instructions", [])
+        programs_called = set()
+        for ix in instructions:
+            prog_idx = ix.get("programIdIndex")
+            if prog_idx is not None and prog_idx < len(account_keys):
+                programs_called.add(account_keys[prog_idx])
+
+        # If only token program called, likely a plain transfer
+        if programs_called == {SPL_TOKEN_PROGRAM}:
+            return "transfer"
+
+        # Check for staking program
+        if STAKE_PROGRAM in programs_called:
+            return "staking"
+
+        # Check for NFT metadata program
+        if NFT_METADATA_PROGRAM in programs_called:
+            return "nft"
+
+        # If a DEX program was called, it's a swap
+        for prog in programs_called:
+            if prog in DEX_PROGRAMS:
+                return "swap"
+
+        return "other"
 
     def process_wallet(self) -> list[Swap] | None:
         if not self.__get_transaction_signatures():
@@ -236,4 +293,8 @@ class SwapParser:
         swap.status_ = "Success"
         swap.blockTime_ = json_data["blockTime"]
         swap.dateTime_ = datetime.fromtimestamp(json_data["blockTime"], timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        swap.platform_ = self.__detect_dex(json_data)
+        swap.category_ = self.__detect_category(json_data)
+        swap.tokenReceivedSymbol_ = TOKEN_SYMBOLS.get(swap.tokenReceived_, None)
+        swap.tokenSentSymbol_ = TOKEN_SYMBOLS.get(swap.tokenSent_, None)
         return swap

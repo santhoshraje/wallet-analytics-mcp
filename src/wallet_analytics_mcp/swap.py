@@ -28,6 +28,9 @@ class Swap:
         self.error_ = error
         self.platform_ = platform
         self.value_ = None
+        self.category_ = None
+        self.tokenReceivedSymbol_ = None
+        self.tokenSentSymbol_ = None
 
     def __str__(self) -> str:
         return (
@@ -42,6 +45,9 @@ class Swap:
             f"    status: {self.status_},\n"
             f"    error: {self.error_},\n"
             f"    platform: {self.platform_}\n"
+            f"    category: {self.category_}\n"
+            f"    tokenReceivedSymbol: {self.tokenReceivedSymbol_}\n"
+            f"    tokenSentSymbol: {self.tokenSentSymbol_}\n"
             f"    value: {self.value_}\n"
             f")\n"
         )
@@ -50,7 +56,9 @@ class Swap:
         return json.dumps({
             "signature": self.signature_,
             "tokenReceived": self.tokenReceived_,
+            "tokenReceivedSymbol": self.tokenReceivedSymbol_,
             "tokenSent": self.tokenSent_,
+            "tokenSentSymbol": self.tokenSentSymbol_,
             "quantitySent": self.quantitySent_,
             "quantityReceived": self.quantityReceived_,
             "blockTime": self.blockTime_ if self.blockTime_ else None,
@@ -58,5 +66,6 @@ class Swap:
             "status": self.status_,
             "error": self.error_,
             "platform": self.platform_,
+            "category": self.category_,
             "value": self.value_,
         })

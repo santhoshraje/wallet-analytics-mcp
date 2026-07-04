@@ -28,3 +28,40 @@ BASE_CURRENCIES = {
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
 }
 
+# Known DEX program IDs mapped to human-readable names
+DEX_PROGRAMS = {
+    "675kPX9MHTjS2zt1qfrLNYJzRfXWvKHh2Qdwn7NjsZ4E": "Raydium-AMM",
+    "JUP6LkbZbjS1jKKwapdHNy74zcW3tLuZ55XkfGPaHaq": "Jupiter-Aggregator",
+    "MEisE1DhNbaGYZgCpYzjAeF5hYoVjU8f6TbAhPiMihB": "Meteora-DLMM",
+    "LBUZKhRxPFMYrbQiuS16yH15W8VBrXKu69Npa6bF7oj": "Meteora-Whirlpool",
+    "TerP7ftemaffewJ4RMSuTzMU28FrY7B8EGCw3TwBNwL": "Pump-fun",
+    "DjVE6JNiPYq5pQU9UoKrGBpVeFLWbXkbGEBGsQpA8hCo": "Orca",
+}
+
+# Program IDs used for transaction category detection
+SPL_TOKEN_PROGRAM = "TokenkegQfeZyi1iAGBsnHNA7mJ6k3F4YK22qfjMKn"
+STAKE_PROGRAM = "Ck4gqAbeysRR8j6YycZs3wEoQeAmPzJfnghgFvLbVHMT"
+NFT_METADATA_PROGRAM = "metaqbxxUerdq28cj1RbAWkZQmYnpuuZqd25Q5Uze"
+
+# Stablecoin mint addresses
+STABLECOIN_MINTS = {
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+    "Es9vMFrzaCMLkB7BdEJm3oAwbQXkFpKZbPVH4gVjR5f",   # USDT (Solana)
+}
+
+# Well-known token mint → symbol mapping
+TOKEN_SYMBOLS = {
+    "So11111111111111111111111111111111111111112": "SOL",
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC",
+    "Es9vMFrzaCMLkB7BdEJm3oAwbQXkFpKZbPVH4gVjR5f": "USDT",
+}
+
+
+def classify_token(mint: str) -> str:
+    """Return 'stablecoin', 'base', or 'other' for a mint address."""
+    if mint in STABLECOIN_MINTS:
+        return "stablecoin"
+    if mint in BASE_CURRENCIES:
+        return "base"
+    return "other"
+
