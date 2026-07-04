@@ -30,20 +30,13 @@ The parser is chain-agnostic in design — swap detection logic applies to any E
 
 ## Use Cases
 
-### Copy Trading
-Track a profitable wallet's swaps in real-time and mirror their trades. Use `token_type_filter="meme"` to focus on high-risk, high-reward plays.
-
-### Wallet Profiling
-Analyze a wallet's trading patterns — preferred DEX, typical position sizes, token preferences — to assess strategy and risk profile.
-
-### Alpha Discovery
-Scan wallets connected to new token launches. Filter with `exclude_categories=["transfer", "staking"]` to isolate pure swap activity.
-
-### DeFi Analytics
-Aggregate swap volume across a portfolio of wallets. Use `min_amount_sent` to filter out dust trades and focus on meaningful positions.
-
-### Stablecoin Flow Tracking
-Monitor large stablecoin movements with `token_type_filter="stablecoin"` and `min_amount_sent=10000` to detect capital inflows/outflows.
+| Use Case | Description | Recommended Filters |
+|----------|-------------|---------------------|
+| Copy Trading | Track a profitable wallet's swaps in real-time and mirror their trades | `token_type_filter="meme"` to focus on high-risk, high-reward plays |
+| Wallet Profiling | Analyze trading patterns — preferred DEX, position sizes, token preferences | No filters; use full data for strategy and risk assessment |
+| Alpha Discovery | Scan wallets connected to new token launches | `exclude_categories=["transfer", "staking"]` to isolate pure swap activity |
+| DeFi Analytics | Aggregate swap volume across a portfolio of wallets | `min_amount_sent` to filter out dust trades |
+| Stablecoin Flow Tracking | Monitor large stablecoin movements for capital inflows/outflows | `token_type_filter="stablecoin"`, `min_amount_sent=10000` |
 
 ## Installation
 
