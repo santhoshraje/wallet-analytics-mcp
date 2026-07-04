@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import time
+import asyncio
 from solders.pubkey import Pubkey
 from datetime import datetime, timezone
 import logging
@@ -21,12 +21,15 @@ sol_address = "So11111111111111111111111111111111111111112"
 usdc_address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 
 
-def _rpc_retry(func, max_attempts: int = 3, logger=None):
-    """Retry RPC call with exponential backoff (1s → 2s → 4s)."""
+async def _rpc_retry(func, max_attempts: int = 3, logger=None):
+    """Retry async RPC call with exponential backoff (1s → 2s → 4s)."""
     last_exception = None
     for attempt in range(max_attempts):
         try:
-            return func()
+            result = func()
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
         except Exception as e:
             last_exception = e
             if logger:
@@ -34,7 +37,7 @@ def _rpc_retry(func, max_attempts: int = 3, logger=None):
                     f"[RPC Retry] Attempt {attempt + 1}/{max_attempts} failed: {type(e).__name__}: {repr(e)}"
                 )
             if attempt < max_attempts - 1:
-                time.sleep(2 ** attempt)
+                await asyncio.sleep(2 ** attempt)
     raise last_exception
 
 
@@ -55,7 +58,7 @@ class SwapParser:
         self.start_date = start
         self.end_date = end
 
-    def __detect_dex(self, json_data: dict) -> str | None:
+    def _detect_dex(self, json_data: dict) -> str | None:
         """Find which DEX program was called in this transaction."""
         account_keys = json_data["transaction"]["message"]["accountKeys"]
         instructions = json_data["transaction"]["message"].get("instructions", [])
@@ -75,7 +78,7 @@ class SwapParser:
                         return DEX_PROGRAMS[prog_id]
         return "unknown"
 
-    def __detect_category(self, json_data: dict) -> str:
+    def _detect_category(self, json_data: dict) -> str:
         """Classify transaction as 'swap', 'transfer', 'staking', 'nft', or 'other'."""
         account_keys = json_data["transaction"]["message"]["accountKeys"]
         instructions = json_data["transaction"]["message"].get("instructions", [])
@@ -104,20 +107,20 @@ class SwapParser:
 
         return "other"
 
-    def process_wallet(self) -> list[Swap] | None:
-        if not self.__get_transaction_signatures():
+    async def process_wallet(self) -> list[Swap] | None:
+        if not await self._get_transaction_signatures():
             return
         for signature in self.signatures:
-            self.__get_transaction_details(signature.signature)
+            await self._get_transaction_details(signature.signature)
 
         for unprocessed in self.unprocessed_transactions:
-            transaction = self.__process_transaction_details(unprocessed)
+            transaction = self._process_transaction_details(unprocessed)
             if transaction:
                 self.processed_transactions.append(transaction)
 
         return self.processed_transactions
 
-    def __get_transaction_signatures(self, max_batches: int = 100) -> bool:
+    async def _get_transaction_signatures(self, max_batches: int = 100) -> bool:
         self.signatures = []
         before_tx = None
         batch_count = 0
@@ -129,13 +132,14 @@ class SwapParser:
                 break
 
             try:
-                batch = _rpc_retry(
+                result = await _rpc_retry(
                     lambda: self.solana_client.get_signatures_for_address(
                         Pubkey.from_string(self.wallet_address),
                         before=before_tx,
                     ),
                     logger=self.logger,
-                ).value
+                )
+                batch = result.value
             except Exception as e:
                 self.logger.error(f"[Parser] Error fetching signatures (all retries exhausted): {type(e).__name__}: {repr(e)}")
                 break
@@ -181,18 +185,19 @@ class SwapParser:
             return False
         return True
 
-    def __get_transaction_details(self, signature: str | None = None) -> None:
+    async def _get_transaction_details(self, signature: str | None = None) -> None:
         try:
-            transaction_details = _rpc_retry(
-                lambda: self.solana_client.get_transaction(signature, max_supported_transaction_version=0).value,
+            result = await _rpc_retry(
+                lambda: self.solana_client.get_transaction(signature, max_supported_transaction_version=0),
                 logger=self.logger,
             )
+            transaction_details = result.value
             json_data = json.loads(transaction_details.to_json())
             self.unprocessed_transactions.append(json_data)
         except Exception as e:
             self.logger.exception(f"An error occurred (all retries exhausted): {type(e).__name__}: {repr(e)}")
 
-    def __process_transaction_details(self, json_data: dict) -> Swap | None:
+    def _process_transaction_details(self, json_data: dict) -> Swap | None:
         transaction_status = json_data["meta"]["err"]
 
         if transaction_status is not None:
@@ -293,8 +298,8 @@ class SwapParser:
         swap.status_ = "Success"
         swap.blockTime_ = json_data["blockTime"]
         swap.dateTime_ = datetime.fromtimestamp(json_data["blockTime"], timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        swap.platform_ = self.__detect_dex(json_data)
-        swap.category_ = self.__detect_category(json_data)
+        swap.platform_ = self._detect_dex(json_data)
+        swap.category_ = self._detect_category(json_data)
         swap.tokenReceivedSymbol_ = TOKEN_SYMBOLS.get(swap.tokenReceived_, None)
         swap.tokenSentSymbol_ = TOKEN_SYMBOLS.get(swap.tokenSent_, None)
         return swap

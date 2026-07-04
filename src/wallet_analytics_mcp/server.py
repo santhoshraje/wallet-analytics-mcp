@@ -48,7 +48,7 @@ mcp = FastMCP(
 
 
 @mcp.tool()
-def get_raw_transactions(
+async def get_raw_transactions(
     wallet_address: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -101,7 +101,7 @@ def get_raw_transactions(
     )
 
     t_process = time.time()
-    swaps = parser.process_wallet()
+    swaps = await parser.process_wallet()
     if swaps is None:
         swaps = []
     logger.info("process_wallet done in %.2fs, %d raw swaps", time.time() - t_process, len(swaps))
