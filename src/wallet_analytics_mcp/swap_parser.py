@@ -17,8 +17,8 @@ def _env_int(key: str, default: int) -> int:
         return default
 
 
-TRANSACTION_LIMIT = _env_int("SOLANA_TX_LIMIT", 30000)
-PROCESS_TIMEOUT = _env_int("SOLANA_PROCESS_TIMEOUT", 120)
+TRANSACTION_LIMIT = _env_int("SOLANA_TX_LIMIT", 500)
+PROCESS_TIMEOUT = _env_int("SOLANA_PROCESS_TIMEOUT", 60)
 
 sol_address = "So11111111111111111111111111111111111111112"
 usdc_address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -160,13 +160,21 @@ class SwapParser:
     async def _process_wallet_inner(self) -> None:
         if not await self._get_transaction_signatures():
             return
+
+        semaphore = asyncio.Semaphore(10)
+        tasks = []
         for signature in self.signatures:
-            await self._get_transaction_details(signature.signature)
+            tasks.append(self._fetch_with_semaphore(signature.signature, semaphore))
+        await asyncio.gather(*tasks, return_exceptions=True)
 
         for unprocessed in self.unprocessed_transactions:
             transaction = self._process_transaction_details(unprocessed)
             if transaction:
                 self.processed_transactions.append(transaction)
+
+    async def _fetch_with_semaphore(self, signature: str | None, semaphore: asyncio.Semaphore) -> None:
+        async with semaphore:
+            await self._get_transaction_details(signature)
 
     async def _get_transaction_signatures(self, max_batches: int = 100) -> bool:
         self.signatures = []
