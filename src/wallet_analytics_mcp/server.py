@@ -13,7 +13,7 @@ LOG_FILE = os.path.join(LOG_DIR, "mcp_server.log")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 root_logger = logging.getLogger()
-root_logger.setLevel(logging.DEBUG)
+root_logger.setLevel(logging.WARNING)
 
 handler = logging.FileHandler(LOG_FILE)
 handler.setFormatter(
@@ -23,6 +23,10 @@ handler.setFormatter(
     )
 )
 root_logger.addHandler(handler)
+
+# Our modules log at DEBUG; third-party libs stay at WARNING
+for name in ("wallet-analytics-mcp", "wallet_analytics_mcp"):
+    logging.getLogger(name).setLevel(logging.DEBUG)
 
 logger = logging.getLogger("wallet-analytics-mcp")
 

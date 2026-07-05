@@ -195,7 +195,7 @@ class SwapParser:
             json_data = json.loads(transaction_details.to_json())
             self.unprocessed_transactions.append(json_data)
         except Exception as e:
-            self.logger.exception(f"An error occurred (all retries exhausted): {type(e).__name__}: {repr(e)}")
+            self.logger.error("Transaction fetch failed after 3 retries: %s", signature)
 
     def _process_transaction_details(self, json_data: dict) -> Swap | None:
         transaction_status = json_data["meta"]["err"]
