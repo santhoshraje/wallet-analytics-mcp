@@ -8,6 +8,7 @@ import logging
 from wallet_analytics_mcp.swap import Swap
 from wallet_analytics_mcp.config import (
     TRANSACTION_LIMIT,
+    PROCESS_TIMEOUT,
     BASE_CURRENCIES,
     DEX_PROGRAMS,
     TOKEN_SYMBOLS,
@@ -107,7 +108,17 @@ class SwapParser:
 
         return "other"
 
-    async def process_wallet(self) -> list[Swap] | None:
+    async def process_wallet(self) -> list[Swap]:
+        try:
+            await asyncio.wait_for(self._process_wallet_inner(), timeout=PROCESS_TIMEOUT)
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                f"[Parser] Process timed out after {PROCESS_TIMEOUT}s. "
+                f"Returning {len(self.processed_transactions)} partial results."
+            )
+        return self.processed_transactions
+
+    async def _process_wallet_inner(self) -> None:
         if not await self._get_transaction_signatures():
             return
         for signature in self.signatures:
@@ -117,8 +128,6 @@ class SwapParser:
             transaction = self._process_transaction_details(unprocessed)
             if transaction:
                 self.processed_transactions.append(transaction)
-
-        return self.processed_transactions
 
     async def _get_transaction_signatures(self, max_batches: int = 100) -> bool:
         self.signatures = []

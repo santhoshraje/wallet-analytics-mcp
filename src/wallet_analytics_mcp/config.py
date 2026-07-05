@@ -21,6 +21,7 @@ def _env_int(key: str, fallback: int) -> int:
 
 TIMEOUT = _env_int("SOLANA_RPC_TIMEOUT", 30)
 TRANSACTION_LIMIT = _env_int("SOLANA_TX_LIMIT", 30000)
+PROCESS_TIMEOUT = _env_int("SOLANA_PROCESS_TIMEOUT", 120)
 
 # RPC endpoint (set via env var, any provider URL)
 SOLANA_RPC_URL = _env("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
