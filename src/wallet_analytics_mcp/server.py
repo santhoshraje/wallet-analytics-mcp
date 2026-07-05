@@ -33,7 +33,7 @@ logger = logging.getLogger("wallet-analytics-mcp")
 from mcp.server.fastmcp import FastMCP
 from wallet_analytics_mcp.swap_parser import SwapParser
 from wallet_analytics_mcp.provider import get_client, clear_cache
-from wallet_analytics_mcp.config import BASE_CURRENCIES, STABLECOIN_MINTS, classify_token
+from wallet_analytics_mcp.swap_parser import BASE_CURRENCIES, STABLECOIN_MINTS, classify_token
 
 
 @asynccontextmanager

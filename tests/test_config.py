@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import os
-from wallet_analytics_mcp.config import (
+from wallet_analytics_mcp.swap_parser import (
     classify_token,
     _env_int,
-    _env,
     BASE_CURRENCIES,
     DEX_PROGRAMS,
     STABLECOIN_MINTS,
 )
+from wallet_analytics_mcp.provider import _env
 
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 SOL = "So11111111111111111111111111111111111111112"

@@ -143,7 +143,7 @@ def test_process_multi_hop_swap():
             "message": {
                 "accountKeys": [
                     "wallet111111111111111111111111111111111111111",
-                    "JUP6LkbZbjS1jKKwapdHNy74zcW3tLuZ55XkfGPaHaq",
+                    "JUP4Fb2cqiRUcaDJR5K1odmyNsBgyX76sgDLpRR1QR5",
                 ],
                 "instructions": [{"programIdIndex": 1}],
             },
@@ -188,7 +188,7 @@ def test_process_sol_received_swap():
             "message": {
                 "accountKeys": [
                     "wallet111111111111111111111111111111111111111",
-                    "675kPX9MHTjS2zt1qfrLNYJzRfXWvKHh2Qdwn7NjsZ4E",
+                    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
                 ],
                 "instructions": [{"programIdIndex": 1}],
             },
@@ -227,7 +227,7 @@ def test_process_sol_sent_swap():
             "message": {
                 "accountKeys": [
                     "wallet111111111111111111111111111111111111111",
-                    "675kPX9MHTjS2zt1qfrLNYJzRfXWvKHh2Qdwn7NjsZ4E",
+                    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
                 ],
                 "instructions": [{"programIdIndex": 1}],
             },
@@ -278,7 +278,7 @@ def test_process_owner_mismatch():
             "message": {
                 "accountKeys": [
                     "wallet111111111111111111111111111111111111111",
-                    "675kPX9MHTjS2zt1qfrLNYJzRfXWvKHh2Qdwn7NjsZ4E",
+                    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
                 ],
                 "instructions": [{"programIdIndex": 1}],
             },
@@ -314,7 +314,7 @@ def test_process_receive_only():
             "message": {
                 "accountKeys": [
                     "wallet111111111111111111111111111111111111111",
-                    "675kPX9MHTjS2zt1qfrLNYJzRfXWvKHh2Qdwn7NjsZ4E",
+                    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
                 ],
                 "instructions": [{"programIdIndex": 1}],
             },

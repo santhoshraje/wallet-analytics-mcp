@@ -1,25 +1,64 @@
 from __future__ import annotations
 
+import os
 import json
 import asyncio
 from solders.pubkey import Pubkey
 from datetime import datetime, timezone
 import logging
 from wallet_analytics_mcp.swap import Swap
-from wallet_analytics_mcp.config import (
-    TRANSACTION_LIMIT,
-    PROCESS_TIMEOUT,
-    BASE_CURRENCIES,
-    DEX_PROGRAMS,
-    TOKEN_SYMBOLS,
-    SPL_TOKEN_PROGRAM,
-    STAKE_PROGRAM,
-    NFT_METADATA_PROGRAM,
-)
 
+
+def _env_int(key: str, default: int) -> int:
+    raw = os.environ.get(key, str(default)) or str(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+TRANSACTION_LIMIT = _env_int("SOLANA_TX_LIMIT", 30000)
+PROCESS_TIMEOUT = _env_int("SOLANA_PROCESS_TIMEOUT", 120)
 
 sol_address = "So11111111111111111111111111111111111111112"
 usdc_address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
+BASE_CURRENCIES = {
+    sol_address,
+    usdc_address,
+}
+
+DEX_PROGRAMS = {
+    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8": "Raydium-AMM",
+    "JUP4Fb2cqiRUcaDJR5K1odmyNsBgyX76sgDLpRR1QR5": "Jupiter-Aggregator",
+    "LBUZKhRxPFcijG9VGsrFkSjjeXAEqEFMvAHLHFGxLQf": "Meteora-DLMM",
+    "6EF8rMRonpkNrswhqbqnmLeVdgCq1jgADTmKtbfzFHKv": "Pump-fun",
+    "AMM55ShdkoHEeFEvKNEZEJpAvQAQbSHYY9HiZwuqvk2": "Raydium-CLMM",
+    "OrcsQ6wkGjsL3hJMshW2aBchTVDafUhmXjaobCZmjqj": "Orca",
+}
+
+SPL_TOKEN_PROGRAM = "TokenkegQfeZyi1iAGBsnHNA7mJ6k3F4YK22qfjMKn"
+STAKE_PROGRAM = "Ck4gqAbeysRR8j6YycZs3wEoQeAmPzJfnghgFvLbVHMT"
+NFT_METADATA_PROGRAM = "metaqbxxUerdq28cj1RbAWkZQmYnpuuZqd25Q5Uze"
+
+STABLECOIN_MINTS = {
+    usdc_address,
+    "Es9vMFrzaCMLkB7BdEJm3oAwbQXkFpKZbPVH4gVjR5f",  # USDT
+}
+
+TOKEN_SYMBOLS = {
+    sol_address: "SOL",
+    usdc_address: "USDC",
+    "Es9vMFrzaCMLkB7BdEJm3oAwbQXkFpKZbPVH4gVjR5f": "USDT",
+}
+
+
+def classify_token(mint: str) -> str:
+    if mint in STABLECOIN_MINTS:
+        return "stablecoin"
+    if mint in BASE_CURRENCIES:
+        return "base"
+    return "other"
 
 
 async def _rpc_retry(func, max_attempts: int = 3, logger=None):

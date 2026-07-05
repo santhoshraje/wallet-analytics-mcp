@@ -70,14 +70,14 @@ async def test_no_filters_returns_all():
 
 async def test_filter_stablecoin_pairs():
     swaps = _mock_swaps()
-    from wallet_analytics_mcp.config import BASE_CURRENCIES
+    from wallet_analytics_mcp.swap_parser import BASE_CURRENCIES
     filtered = [s for s in swaps if not (s.tokenReceived_ in BASE_CURRENCIES and s.tokenSent_ in BASE_CURRENCIES)]
     assert len(filtered) < len(swaps)
 
 
 async def test_token_type_filter_meme():
     swaps = _mock_swaps()
-    from wallet_analytics_mcp.config import classify_token
+    from wallet_analytics_mcp.swap_parser import classify_token
     filtered = [s for s in swaps if
                 classify_token(s.tokenReceived_) != "stablecoin" or
                 classify_token(s.tokenSent_) != "stablecoin"]
@@ -86,7 +86,7 @@ async def test_token_type_filter_meme():
 
 async def test_token_type_filter_stablecoin():
     swaps = _mock_swaps()
-    from wallet_analytics_mcp.config import classify_token
+    from wallet_analytics_mcp.swap_parser import classify_token
     filtered = [s for s in swaps if
                 classify_token(s.tokenReceived_) in ("stablecoin", "base") or
                 classify_token(s.tokenSent_) in ("stablecoin", "base")]
@@ -161,7 +161,7 @@ async def get_raw_transactions_direct(
     from datetime import datetime, timezone, timedelta
     from wallet_analytics_mcp.swap_parser import SwapParser
     from wallet_analytics_mcp.provider import get_client
-    from wallet_analytics_mcp.config import BASE_CURRENCIES, classify_token
+    from wallet_analytics_mcp.swap_parser import BASE_CURRENCIES, classify_token
 
     if start_date:
         sd = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)

@@ -53,7 +53,7 @@ RAYDIUM_SWAP_JSON = {
         "message": {
             "accountKeys": [
                 "wallet111111111111111111111111111111111111111",
-                "675kPX9MHTjS2zt1qfrLNYJzRfXWvKHh2Qdwn7NjsZ4E",
+                "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
             ],
             "instructions": [
                 {"programIdIndex": 1},
@@ -83,7 +83,7 @@ JUPITER_INNER_JSON = {
         "message": {
             "accountKeys": [
                 "wallet111111111111111111111111111111111111111",
-                "some_program",
+                "TokenkegQfeZyi1iAGBsnHNA7mJ6k3F4YK22qfjMKn",
             ],
             "instructions": [
                 {"programIdIndex": 1},
@@ -115,7 +115,7 @@ JUPITER_INNER_JSON = {
 }
 
 # Override inner instruction to point to Jupiter program
-JUPITER_INNER_JSON["transaction"]["message"]["accountKeys"].append("JUP6LkbZbjS1jKKwapdHNy74zcW3tLuZ55XkfGPaHaq")
+JUPITER_INNER_JSON["transaction"]["message"]["accountKeys"].append("JUP4Fb2cqiRUcaDJR5K1odmyNsBgyX76sgDLpRR1QR5")
 JUPITER_INNER_JSON["meta"]["innerInstructions"][0]["instructions"][0]["programIdIndex"] = 2
 
 TRANSFER_TOKEN_JSON = {
@@ -200,7 +200,7 @@ FAILED_TX_JSON = {
         "message": {
             "accountKeys": [
                 "wallet111111111111111111111111111111111111111",
-                "675kPX9MHTjS2zt1qfrLNYJzRfXWvKHh2Qdwn7NjsZ4E",
+                "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
             ],
             "instructions": [{"programIdIndex": 1}],
         },
@@ -222,7 +222,7 @@ METEORA_SWAP_JSON = {
         "message": {
             "accountKeys": [
                 "wallet111111111111111111111111111111111111111",
-                "MEisE1DhNbaGYZgCpYzjAeF5hYoVjU8f6TbAhPiMihB",
+                "LBUZKhRxPFcijG9VGsrFkSjjeXAEqEFMvAHLHFGxLQf",
             ],
             "instructions": [{"programIdIndex": 1}],
         },
