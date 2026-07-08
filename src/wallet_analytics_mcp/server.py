@@ -8,32 +8,50 @@ from datetime import datetime, timezone, timedelta
 
 import wallet_analytics_mcp
 
-LOG_DIR = os.path.join(os.path.dirname(wallet_analytics_mcp.__file__), "..", "log")
+LOG_DIR = os.path.join(os.path.dirname(wallet_analytics_mcp.__file__), "..", "..", "log")
 LOG_FILE = os.path.join(LOG_DIR, "mcp_server.log")
+TX_LOG_FILE = os.path.join(LOG_DIR, "tx_debug.log")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.WARNING)
 
-handler = logging.FileHandler(LOG_FILE)
-handler.setFormatter(
-    logging.Formatter(
-        "%(asctime)s [%(name)s] %(levelname)-5s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+formatter = logging.Formatter(
+    "%(asctime)s [%(name)s] %(levelname)-5s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
-root_logger.addHandler(handler)
 
-# Our modules log at DEBUG; third-party libs stay at WARNING
+file_handler = logging.FileHandler(LOG_FILE)
+file_handler.setFormatter(formatter)
+
+# Our modules — keep DEBUG, write to file
 for name in ("wallet-analytics-mcp", "wallet_analytics_mcp"):
-    logging.getLogger(name).setLevel(logging.DEBUG)
+    mod_logger = logging.getLogger(name)
+    mod_logger.setLevel(logging.DEBUG)
+    mod_logger.addHandler(file_handler)
+
+# Transaction debug log — captures raw RPC data and parsed swaps
+tx_formatter = logging.Formatter(
+    "%(asctime)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+tx_handler = logging.FileHandler(TX_LOG_FILE)
+tx_handler.setFormatter(tx_formatter)
+
+tx_logger = logging.getLogger("wallet_analytics_mcp.tx_debug")
+tx_logger.setLevel(logging.DEBUG)
+tx_logger.addHandler(tx_handler)
+
+# Third-party HTTP libs — suppress noise
+for noisy in ("hpack.hpack", "httpcore2", "httpx2"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 
 logger = logging.getLogger("wallet-analytics-mcp")
 
 from mcp.server.fastmcp import FastMCP
 from wallet_analytics_mcp.swap_parser import SwapParser
-from wallet_analytics_mcp.provider import get_client, clear_cache
-from wallet_analytics_mcp.swap_parser import BASE_CURRENCIES, STABLECOIN_MINTS, classify_token
+from wallet_analytics_mcp.provider import get_client, clear_cache, get_profile
+from wallet_analytics_mcp.swap_parser import BASE_CURRENCIES, STABLECOIN_MINTS, PROCESS_TIMEOUT, classify_token
 
 
 @asynccontextmanager
@@ -65,6 +83,7 @@ async def get_raw_transactions(
     """Fetch raw swap transactions for a Solana wallet address.
 
     Returns all detected swaps by default. Use optional filters to narrow results.
+    IMPORTANT: Check the "partial" field in the response — if true, some transactions were not fetched due to timeout and results may be incomplete.
 
     Args:
         wallet_address: Solana wallet public key (base58).
@@ -88,13 +107,21 @@ async def get_raw_transactions(
 
     if end_date:
         ed = datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+        # If user passed a date-only string (e.g. "2026-07-05"), default to end of day
+        if ed.hour == 0 and ed.minute == 0 and ed.second == 0 and ed.microsecond == 0:
+            ed = ed.replace(hour=23, minute=59, second=59)
     else:
         ed = datetime.now(timezone.utc)
 
     logger.info("date range: %s to %s", sd, ed)
 
+    profile = get_profile()
+    logger.info("RPC profile: %s (batch=%d, delay=%.1fs, timeout=%ds)",
+                "public" if profile.is_public else "paid",
+                profile.batch_size, profile.batch_delay, profile.client_timeout)
+
     t_client = time.time()
-    client = get_client()
+    client = get_client(profile)
     logger.info("get_client done in %.2fs", time.time() - t_client)
 
     parser = SwapParser(
@@ -102,6 +129,7 @@ async def get_raw_transactions(
         client=client,
         start=sd,
         end=ed,
+        profile=profile,
     )
 
     t_process = time.time()
@@ -135,17 +163,28 @@ async def get_raw_transactions(
     logger.info("get_raw_transactions done: %d swaps, total %.1fs", len(swaps), elapsed)
     logger.info("=== get_raw_transactions END ===")
 
-    return {
+    if parser.timed_out:
+        partial_reason = f"Timed out after {PROCESS_TIMEOUT}s. Results may be incomplete."
+        logger.warning("PARTIAL RESULTS: %s (%d swaps returned)", partial_reason, len(swaps))
+    else:
+        partial_reason = None
+
+    result = {
+        "partial": parser.timed_out,
         "wallet": wallet_address,
         "swap_count": len(swaps),
-        "filters_applied": {
-            "filter_stablecoin_pairs": filter_stablecoin_pairs,
-            "token_type_filter": token_type_filter,
-            "min_amount_sent": min_amount_sent,
-            "min_amount_received": min_amount_received,
-            "exclude_categories": exclude_categories,
-        },
-        "swaps": [
+    }
+    if parser.timed_out:
+        result["partial_reason"] = partial_reason
+    result["filters_applied"] = {
+        "filter_stablecoin_pairs": filter_stablecoin_pairs,
+        "token_type_filter": token_type_filter,
+        "min_amount_sent": min_amount_sent,
+        "min_amount_received": min_amount_received,
+        "exclude_categories": exclude_categories,
+    }
+
+    result["swaps"] = [
             {
                 "signature": s.signature_,
                 "tokenReceived": s.tokenReceived_,
@@ -160,5 +199,6 @@ async def get_raw_transactions(
                 "blockTime": s.blockTime_,
             }
             for s in swaps
-        ],
-    }
+        ]
+
+    return result

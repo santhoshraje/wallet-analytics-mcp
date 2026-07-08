@@ -4,9 +4,11 @@ import os
 import json
 import asyncio
 from solders.pubkey import Pubkey
+from solders.signature import Signature
 from datetime import datetime, timezone
 import logging
 from wallet_analytics_mcp.swap import Swap
+from wallet_analytics_mcp.provider import get_profile
 
 
 def _env_int(key: str, default: int) -> int:
@@ -18,7 +20,7 @@ def _env_int(key: str, default: int) -> int:
 
 
 TRANSACTION_LIMIT = _env_int("SOLANA_TX_LIMIT", 500)
-PROCESS_TIMEOUT = _env_int("SOLANA_PROCESS_TIMEOUT", 60)
+PROCESS_TIMEOUT = _env_int("SOLANA_PROCESS_TIMEOUT", 120)
 
 sol_address = "So11111111111111111111111111111111111111112"
 usdc_address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -30,9 +32,10 @@ BASE_CURRENCIES = {
 
 DEX_PROGRAMS = {
     "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8": "Raydium-AMM",
-    "JUP4Fb2cqiRUcaDJR5K1odmyNsBgyX76sgDLpRR1QR5": "Jupiter-Aggregator",
+    "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4": "Jupiter-Aggregator",
+    "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": "Jupiter-Aggregator",
     "LBUZKhRxPFcijG9VGsrFkSjjeXAEqEFMvAHLHFGxLQf": "Meteora-DLMM",
-    "6EF8rMRonpkNrswhqbqnmLeVdgCq1jgADTmKtbfzFHKv": "Pump-fun",
+    "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "Pump-fun",
     "AMM55ShdkoHEeFEvKNEZEJpAvQAQbSHYY9HiZwuqvk2": "Raydium-CLMM",
     "OrcsQ6wkGjsL3hJMshW2aBchTVDafUhmXjaobCZmjqj": "Orca",
 }
@@ -61,23 +64,37 @@ def classify_token(mint: str) -> str:
     return "other"
 
 
-async def _rpc_retry(func, max_attempts: int = 3, logger=None):
-    """Retry async RPC call with exponential backoff (1s → 2s → 4s)."""
+async def _rpc_retry(func, max_attempts: int = 3, logger=None) -> tuple:
+    """Retry async RPC call with exponential backoff.
+
+    Returns (result, was_rate_limited). Rate-limited errors get flat 5s delay.
+    Other errors use standard backoff (1s → 2s). Non-retryable errors (ValueError,
+    TypeError) fail immediately without backoff.
+    """
     last_exception = None
+    was_rate_limited = False
     for attempt in range(max_attempts):
         try:
             result = func()
             if asyncio.iscoroutine(result):
-                return await result
-            return result
+                return await result, was_rate_limited
+            return result, was_rate_limited
+        except (ValueError, TypeError) as e:
+            # Non-retryable — bad input, not a transient RPC error
+            if logger:
+                logger.error(f"[RPC Retry] Non-retryable error: {type(e).__name__}: {repr(e)}")
+            raise
         except Exception as e:
             last_exception = e
+            err_str = f"{type(e).__name__}: {repr(e)}"
+            is_rl = "HTTPStatusError" in err_str
+            if is_rl:
+                was_rate_limited = True
             if logger:
-                logger.warning(
-                    f"[RPC Retry] Attempt {attempt + 1}/{max_attempts} failed: {type(e).__name__}: {repr(e)}"
-                )
+                logger.warning(f"[RPC Retry] Attempt {attempt + 1}/{max_attempts} failed: {err_str}")
             if attempt < max_attempts - 1:
-                await asyncio.sleep(2 ** attempt)
+                wait = 5.0 if is_rl else (2 ** attempt)
+                await asyncio.sleep(wait)
     raise last_exception
 
 
@@ -88,15 +105,19 @@ class SwapParser:
         client=None,
         start: datetime | None = None,
         end: datetime | None = None,
+        profile=None,
     ) -> None:
         self.wallet_address = wallet_address
         self.signatures = []
         self.solana_client = client
         self.processed_transactions: list[Swap] = []
-        self.unprocessed_transactions: list[dict] = []
+        self.failed_signatures: list[str] = []
         self.logger = logging.getLogger(__name__)
+        self.tx_logger = logging.getLogger("wallet_analytics_mcp.tx_debug")
         self.start_date = start
         self.end_date = end
+        self.profile = profile or get_profile()
+        self.timed_out = False
 
     def _detect_dex(self, json_data: dict) -> str | None:
         """Find which DEX program was called in this transaction."""
@@ -151,6 +172,7 @@ class SwapParser:
         try:
             await asyncio.wait_for(self._process_wallet_inner(), timeout=PROCESS_TIMEOUT)
         except asyncio.TimeoutError:
+            self.timed_out = True
             self.logger.warning(
                 f"[Parser] Process timed out after {PROCESS_TIMEOUT}s. "
                 f"Returning {len(self.processed_transactions)} partial results."
@@ -158,25 +180,83 @@ class SwapParser:
         return self.processed_transactions
 
     async def _process_wallet_inner(self) -> None:
+        self.tx_logger.info(f"=== PROCESSING WALLET {self.wallet_address} | "
+                           f"start={self.start_date} end={self.end_date} ===")
         if not await self._get_transaction_signatures():
             return
 
-        semaphore = asyncio.Semaphore(10)
-        tasks = []
-        for signature in self.signatures:
-            tasks.append(self._fetch_with_semaphore(signature.signature, semaphore))
-        await asyncio.gather(*tasks, return_exceptions=True)
+        sig_list = [s.signature for s in self.signatures]
+        await self._fetch_transactions_batched(sig_list)
 
-        for unprocessed in self.unprocessed_transactions:
-            transaction = self._process_transaction_details(unprocessed)
-            if transaction:
-                self.processed_transactions.append(transaction)
+        failed = len(self.failed_signatures)
+        self.logger.info(
+            f"[Parser] Fetch complete: {len(self.processed_transactions)}/{len(sig_list)} transactions fetched, "
+            f"{failed} failed after retries"
+        )
+
+    async def _fetch_transactions_batched(self, sigs: list[str | Signature]) -> None:
+        """Fetch transactions using the strategy matched to the RPC rate limits."""
+        if self.profile.per_req_delay > 0:
+            await self._fetch_sequential(sigs)
+        else:
+            await self._fetch_parallel(sigs)
+
+    async def _fetch_sequential(self, sigs: list[str]) -> None:
+        """Fetch one at a time with per-request delay — for public RPC.
+
+        On first rate-limit hit, pauses the whole loop to let the window reset.
+        Processes each transaction inline so partial results survive timeouts.
+        """
+        rate_limited = False
+        for idx, sig in enumerate(sigs):
+            json_data, was_rl = await self._get_transaction_details(sig)
+            if json_data is not None:
+                swap = self._process_transaction_details(json_data)
+                if swap:
+                    self.processed_transactions.append(swap)
+            else:
+                self.failed_signatures.append(sig)
+                self.tx_logger.info(f"FAIL [{sig}] Transaction fetch failed")
+            if was_rl and not rate_limited:
+                rate_limited = True
+                self.logger.warning(
+                    f"[Parser] Rate limit hit — pausing {self.profile.rate_limit_pause}s before continuing"
+                )
+                await asyncio.sleep(self.profile.rate_limit_pause)
+            if idx < len(sigs) - 1:
+                await asyncio.sleep(self.profile.per_req_delay)
+
+    async def _fetch_parallel(self, sigs: list[str]) -> None:
+        """Fetch in parallel batches — for paid RPC with generous limits."""
+        batch_size = self.profile.batch_size
+        for i in range(0, len(sigs), batch_size):
+            batch = sigs[i:i + batch_size]
+            semaphore = asyncio.Semaphore(len(batch))
+            tasks = [self._fetch_with_semaphore(sig, semaphore) for sig in batch]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            if i + batch_size < len(sigs):
+                await asyncio.sleep(self.profile.batch_delay)
 
     async def _fetch_with_semaphore(self, signature: str | None, semaphore: asyncio.Semaphore) -> None:
         async with semaphore:
-            await self._get_transaction_details(signature)
+            json_data, _ = await self._get_transaction_details(signature)
+            if json_data is not None:
+                swap = self._process_transaction_details(json_data)
+                if swap:
+                    self.processed_transactions.append(swap)
+            else:
+                self.failed_signatures.append(signature)
+                self.tx_logger.info(f"FAIL [{signature}] Transaction fetch failed")
 
     async def _get_transaction_signatures(self, max_batches: int = 100) -> bool:
+        # Validate wallet address upfront — fail fast before any RPC calls
+        try:
+            pubkey = Pubkey.from_string(self.wallet_address)
+        except ValueError as e:
+            self.logger.error(f"[Parser] Invalid wallet address '{self.wallet_address}': {e}")
+            return False
+
         self.signatures = []
         before_tx = None
         batch_count = 0
@@ -188,9 +268,9 @@ class SwapParser:
                 break
 
             try:
-                result = await _rpc_retry(
+                result, _ = await _rpc_retry(
                     lambda: self.solana_client.get_signatures_for_address(
-                        Pubkey.from_string(self.wallet_address),
+                        pubkey,
                         before=before_tx,
                     ),
                     logger=self.logger,
@@ -232,7 +312,9 @@ class SwapParser:
                 if oldest_block_time and oldest_block_time < self.start_date:
                     break
 
-            before_tx = batch[-1].signature
+            raw_sig = batch[-1].signature
+            # solana-py 0.40 requires Signature object for pagination
+            before_tx = raw_sig if isinstance(raw_sig, Signature) else Signature.from_string(raw_sig)
 
         self.logger.info(f"[Parser] Total signatures: {len(self.signatures)}")
 
@@ -241,22 +323,34 @@ class SwapParser:
             return False
         return True
 
-    async def _get_transaction_details(self, signature: str | None = None) -> None:
+    async def _get_transaction_details(self, signature: str | Signature | None = None) -> tuple[dict | None, bool]:
+        """Fetch transaction details. Returns (json_data_or_none, was_rate_limited)."""
+        if signature is None:
+            return None, False
+        # solana-py 0.40 requires Signature object, not string
+        if isinstance(signature, str):
+            sig_obj = Signature.from_string(signature)
+        else:
+            sig_obj = signature
         try:
-            result = await _rpc_retry(
-                lambda: self.solana_client.get_transaction(signature, max_supported_transaction_version=0),
+            result, was_rl = await _rpc_retry(
+                lambda: self.solana_client.get_transaction(sig_obj, max_supported_transaction_version=0),
                 logger=self.logger,
             )
             transaction_details = result.value
-            json_data = json.loads(transaction_details.to_json())
-            self.unprocessed_transactions.append(json_data)
+            return json.loads(transaction_details.to_json()), was_rl
         except Exception as e:
             self.logger.error("Transaction fetch failed after 3 retries: %s", signature)
+            is_rl = "HTTPStatusError" in repr(e)
+            return None, is_rl
 
     def _process_transaction_details(self, json_data: dict) -> Swap | None:
+        sig = json_data.get("transaction", {}).get("signatures", [None])[0]
+
         transaction_status = json_data["meta"]["err"]
 
         if transaction_status is not None:
+            self.tx_logger.info(f"SKIP [{sig}] Failed tx: {transaction_status}")
             return
 
         account_keys = json_data["transaction"]["message"]["accountKeys"]
@@ -266,6 +360,7 @@ class SwapParser:
 
         # Not a buy/sell transaction
         if not preTokenBalances or not postTokenBalances:
+            self.tx_logger.info(f"SKIP [{sig}] No token balances")
             return
 
         pre_dict: dict[str, float] = {}
@@ -348,6 +443,7 @@ class SwapParser:
 
         if (swap.quantityReceived_ is not None and swap.quantityReceived_ < 0) or \
            (swap.quantitySent_ is not None and swap.quantitySent_ < 0):
+            self.tx_logger.info(f"SKIP [{sig}] Negative quantity: sent={swap.quantitySent_}, recv={swap.quantityReceived_}")
             return
 
         swap.signature_ = json_data["transaction"]["signatures"][0]
@@ -358,4 +454,12 @@ class SwapParser:
         swap.category_ = self._detect_category(json_data)
         swap.tokenReceivedSymbol_ = TOKEN_SYMBOLS.get(swap.tokenReceived_, None)
         swap.tokenSentSymbol_ = TOKEN_SYMBOLS.get(swap.tokenSent_, None)
+
+        self.tx_logger.info(
+            f"SWAP [{sig}] "
+            f"{swap.tokenSentSymbol_ or swap.tokenSent_}({swap.quantitySent_}) -> "
+            f"{swap.tokenReceivedSymbol_ or swap.tokenReceived_}({swap.quantityReceived_}) "
+            f"| platform={swap.platform_} category={swap.category_} time={swap.dateTime_}"
+        )
+        self.tx_logger.debug(f"RAW [{sig}] {json.dumps(json_data)}")
         return swap

@@ -115,7 +115,7 @@ JUPITER_INNER_JSON = {
 }
 
 # Override inner instruction to point to Jupiter program
-JUPITER_INNER_JSON["transaction"]["message"]["accountKeys"].append("JUP4Fb2cqiRUcaDJR5K1odmyNsBgyX76sgDLpRR1QR5")
+JUPITER_INNER_JSON["transaction"]["message"]["accountKeys"].append("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4")
 JUPITER_INNER_JSON["meta"]["innerInstructions"][0]["instructions"][0]["programIdIndex"] = 2
 
 TRANSFER_TOKEN_JSON = {

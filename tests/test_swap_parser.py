@@ -78,7 +78,7 @@ async def test_rpc_retry_success_first_try():
         call_count += 1
         return 42
 
-    result = await _rpc_retry(lambda: func(), max_attempts=3)
+    result, was_rl = await _rpc_retry(lambda: func(), max_attempts=3)
     assert result == 42
     assert call_count == 1
 
@@ -93,7 +93,7 @@ async def test_rpc_retry_succeeds_after_failures():
             raise ConnectionError("timeout")
         return "ok"
 
-    result = await _rpc_retry(lambda: func(), max_attempts=5)
+    result, was_rl = await _rpc_retry(lambda: func(), max_attempts=5)
     assert result == "ok"
     assert call_count == 3
 
@@ -143,7 +143,7 @@ def test_process_multi_hop_swap():
             "message": {
                 "accountKeys": [
                     "wallet111111111111111111111111111111111111111",
-                    "JUP4Fb2cqiRUcaDJR5K1odmyNsBgyX76sgDLpRR1QR5",
+                    "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
                 ],
                 "instructions": [{"programIdIndex": 1}],
             },
@@ -351,12 +351,15 @@ async def test_process_wallet_full_flow():
     """End-to-end process_wallet with mocked RPC responses."""
     from unittest.mock import AsyncMock, MagicMock, patch
     from datetime import datetime, timezone
+    from solders.signature import Signature
 
     now = datetime.now(timezone.utc)
     mock_client = create_mock_client()
 
+    # Use a real Signature object for pagination compatibility with solana-py 0.40
+    fake_sig = Signature.from_bytes(bytes(64))
     sig_obj = MagicMock()
-    sig_obj.signature = "sig-raydium-001"
+    sig_obj.signature = fake_sig
     sig_obj.block_time = int(now.timestamp())
     result_obj = MagicMock()
     result_obj.value = [sig_obj]
@@ -421,5 +424,49 @@ async def test_process_wallet_rpc_error():
 
 async def test_rpc_retry_sync_return():
     """_rpc_retry handles a function that returns a plain value (not a coroutine)."""
-    result = await _rpc_retry(lambda: "sync_value", max_attempts=1)
+    result, was_rl = await _rpc_retry(lambda: "sync_value", max_attempts=1)
     assert result == "sync_value"
+
+
+async def test_process_wallet_timeout_sets_flag():
+    """process_wallet sets timed_out=True and returns partial results on timeout."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from solders.signature import Signature
+
+    mock_client = create_mock_client()
+
+    fake_sig = Signature.from_bytes(bytes(64))
+    sig_obj = MagicMock()
+    sig_obj.signature = fake_sig
+    sig_obj.block_time = 1234567890
+    result_obj = MagicMock()
+    result_obj.value = [sig_obj]
+    empty_result = MagicMock()
+    empty_result.value = []
+    mock_client.get_signatures_for_address = AsyncMock(side_effect=[result_obj, empty_result])
+
+    tx_wrapper = MagicMock()
+    tx_wrapper.to_json.return_value = __import__('json').dumps(RAYDIUM_SWAP_JSON)
+    tx_result = MagicMock()
+    tx_result.value = tx_wrapper
+    mock_client.get_transaction = AsyncMock(return_value=tx_result)
+
+    with patch("wallet_analytics_mcp.swap_parser.Pubkey"):
+        parser = SwapParser(
+            wallet_address="wallet111111111111111111111111111111111111111",
+            client=mock_client,
+        )
+
+    async def mock_wait_for(coro, timeout):
+        # Clean up the coroutine to avoid "never awaited" warning
+        try:
+            await coro
+        except Exception:
+            pass
+        raise asyncio.TimeoutError()
+
+    with patch("asyncio.wait_for", side_effect=mock_wait_for):
+        swaps = await parser.process_wallet()
+
+    assert parser.timed_out is True
+    assert swaps == []

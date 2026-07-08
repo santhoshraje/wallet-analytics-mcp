@@ -66,6 +66,23 @@ async def test_no_filters_returns_all():
         with patch.object(SwapParser, "process_wallet", new_callable=AsyncMock, return_value=swaps):
             result = await get_raw_transactions_direct(wallet_address="test123")
     assert result["swap_count"] == 4
+    assert result["partial"] is False
+
+
+async def test_partial_flag_on_timeout():
+    """Response includes partial=True when parser times out."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    swaps = _mock_swaps()
+
+    mock_parser = MagicMock()
+    mock_parser.timed_out = True
+    mock_parser.process_wallet = AsyncMock(return_value=swaps)
+
+    with patch("wallet_analytics_mcp.server.get_client", return_value=MagicMock()):
+        with patch("wallet_analytics_mcp.swap_parser.SwapParser", return_value=mock_parser):
+            result = await get_raw_transactions_direct(wallet_address="test123")
+    assert result["partial"] is True
+    assert "Timed out" in result["partial_reason"]
 
 
 async def test_filter_stablecoin_pairs():
@@ -161,7 +178,7 @@ async def get_raw_transactions_direct(
     from datetime import datetime, timezone, timedelta
     from wallet_analytics_mcp.swap_parser import SwapParser
     from wallet_analytics_mcp.provider import get_client
-    from wallet_analytics_mcp.swap_parser import BASE_CURRENCIES, classify_token
+    from wallet_analytics_mcp.swap_parser import BASE_CURRENCIES, PROCESS_TIMEOUT, classify_token
 
     if start_date:
         sd = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
@@ -193,7 +210,7 @@ async def get_raw_transactions_direct(
     if exclude_categories:
         swaps = [s for s in swaps if s.category_ not in exclude_categories]
 
-    return {
+    result = {
         "wallet": wallet_address,
         "swap_count": len(swaps),
         "filters_applied": {
@@ -203,7 +220,14 @@ async def get_raw_transactions_direct(
             "min_amount_received": min_amount_received,
             "exclude_categories": exclude_categories,
         },
-        "swaps": [
+    }
+    if parser.timed_out:
+        result["partial"] = True
+        result["partial_reason"] = f"Timed out after {PROCESS_TIMEOUT}s. Results may be incomplete."
+    else:
+        result["partial"] = False
+
+    result["swaps"] = [
             {
                 "signature": s.signature_,
                 "tokenReceived": s.tokenReceived_,
@@ -218,5 +242,6 @@ async def get_raw_transactions_direct(
                 "blockTime": s.blockTime_,
             }
             for s in swaps
-        ],
-    }
+        ]
+
+    return result
