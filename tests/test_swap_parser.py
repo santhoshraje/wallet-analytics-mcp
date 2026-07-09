@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 from wallet_analytics_mcp.swap_parser import SwapParser, _rpc_retry
 from tests.conftest import (
     create_mock_client,
@@ -451,21 +452,15 @@ async def test_process_wallet_timeout_sets_flag():
     tx_result.value = tx_wrapper
     mock_client.get_transaction = AsyncMock(return_value=tx_result)
 
-    with patch("wallet_analytics_mcp.swap_parser.Pubkey"):
-        parser = SwapParser(
-            wallet_address="wallet111111111111111111111111111111111111111",
-            client=mock_client,
-        )
+    parser = SwapParser(
+        wallet_address="wallet111111111111111111111111111111111111111",
+        client=mock_client,
+    )
 
-    async def mock_wait_for(coro, timeout):
-        # Clean up the coroutine to avoid "never awaited" warning
-        try:
-            await coro
-        except Exception:
-            pass
-        raise asyncio.TimeoutError()
-
-    with patch("asyncio.wait_for", side_effect=mock_wait_for):
+    # Patch Pubkey for validation and time.monotonic to simulate elapsed time exceeding timeout
+    monotonic_calls = itertools.count(0, 200)  # 0, 200, 400, ... (exceeds 120s on 2nd call)
+    with patch("wallet_analytics_mcp.swap_parser.Pubkey"), \
+         patch("wallet_analytics_mcp.swap_parser.time.monotonic", side_effect=monotonic_calls):
         swaps = await parser.process_wallet()
 
     assert parser.timed_out is True

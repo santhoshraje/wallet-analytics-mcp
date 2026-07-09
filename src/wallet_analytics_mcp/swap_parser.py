@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import time
 import asyncio
 from solders.pubkey import Pubkey
 from solders.signature import Signature
@@ -169,24 +170,25 @@ class SwapParser:
         return "other"
 
     async def process_wallet(self) -> list[Swap]:
+        # Validate wallet address upfront — fail fast before any RPC calls or timeout
         try:
-            await asyncio.wait_for(self._process_wallet_inner(), timeout=PROCESS_TIMEOUT)
-        except asyncio.TimeoutError:
-            self.timed_out = True
-            self.logger.warning(
-                f"[Parser] Process timed out after {PROCESS_TIMEOUT}s. "
-                f"Returning {len(self.processed_transactions)} partial results."
-            )
+            Pubkey.from_string(self.wallet_address)
+        except ValueError as e:
+            self.logger.error(f"[Parser] Invalid wallet address '{self.wallet_address}': {e}")
+            return self.processed_transactions
+
+        t0 = time.monotonic()
+        await self._process_wallet_inner(t0)
         return self.processed_transactions
 
-    async def _process_wallet_inner(self) -> None:
+    async def _process_wallet_inner(self, start_time: float) -> None:
         self.tx_logger.info(f"=== PROCESSING WALLET {self.wallet_address} | "
                            f"start={self.start_date} end={self.end_date} ===")
         if not await self._get_transaction_signatures():
             return
 
         sig_list = [s.signature for s in self.signatures]
-        await self._fetch_transactions_batched(sig_list)
+        await self._fetch_transactions_batched(sig_list, start_time)
 
         failed = len(self.failed_signatures)
         self.logger.info(
@@ -194,21 +196,30 @@ class SwapParser:
             f"{failed} failed after retries"
         )
 
-    async def _fetch_transactions_batched(self, sigs: list[str | Signature]) -> None:
+    async def _fetch_transactions_batched(self, sigs: list[str | Signature], start_time: float) -> None:
         """Fetch transactions using the strategy matched to the RPC rate limits."""
         if self.profile.per_req_delay > 0:
-            await self._fetch_sequential(sigs)
+            await self._fetch_sequential(sigs, start_time)
         else:
-            await self._fetch_parallel(sigs)
+            await self._fetch_parallel(sigs, start_time)
 
-    async def _fetch_sequential(self, sigs: list[str]) -> None:
+    async def _fetch_sequential(self, sigs: list[str], start_time: float) -> None:
         """Fetch one at a time with per-request delay — for public RPC.
 
         On first rate-limit hit, pauses the whole loop to let the window reset.
         Processes each transaction inline so partial results survive timeouts.
+        Checks elapsed time before each iteration to avoid exceeding PROCESS_TIMEOUT.
         """
         rate_limited = False
         for idx, sig in enumerate(sigs):
+            elapsed = time.monotonic() - start_time
+            if elapsed >= PROCESS_TIMEOUT:
+                self.timed_out = True
+                self.logger.warning(
+                    f"[Parser] Process timed out after {PROCESS_TIMEOUT}s. "
+                    f"Returning {len(self.processed_transactions)} partial results."
+                )
+                break
             json_data, was_rl = await self._get_transaction_details(sig)
             if json_data is not None:
                 swap = self._process_transaction_details(json_data)
@@ -226,10 +237,18 @@ class SwapParser:
             if idx < len(sigs) - 1:
                 await asyncio.sleep(self.profile.per_req_delay)
 
-    async def _fetch_parallel(self, sigs: list[str]) -> None:
+    async def _fetch_parallel(self, sigs: list[str], start_time: float) -> None:
         """Fetch in parallel batches — for paid RPC with generous limits."""
         batch_size = self.profile.batch_size
         for i in range(0, len(sigs), batch_size):
+            elapsed = time.monotonic() - start_time
+            if elapsed >= PROCESS_TIMEOUT:
+                self.timed_out = True
+                self.logger.warning(
+                    f"[Parser] Process timed out after {PROCESS_TIMEOUT}s. "
+                    f"Returning {len(self.processed_transactions)} partial results."
+                )
+                break
             batch = sigs[i:i + batch_size]
             semaphore = asyncio.Semaphore(len(batch))
             tasks = [self._fetch_with_semaphore(sig, semaphore) for sig in batch]
@@ -250,12 +269,7 @@ class SwapParser:
                 self.tx_logger.info(f"FAIL [{signature}] Transaction fetch failed")
 
     async def _get_transaction_signatures(self, max_batches: int = 100) -> bool:
-        # Validate wallet address upfront — fail fast before any RPC calls
-        try:
-            pubkey = Pubkey.from_string(self.wallet_address)
-        except ValueError as e:
-            self.logger.error(f"[Parser] Invalid wallet address '{self.wallet_address}': {e}")
-            return False
+        pubkey = Pubkey.from_string(self.wallet_address)
 
         self.signatures = []
         before_tx = None
