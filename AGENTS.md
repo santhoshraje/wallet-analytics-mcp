@@ -28,18 +28,23 @@ All RPC config via env vars — no hardcoded URLs. See README.md for full parame
 
 `RpcProfile` in `provider.py` auto-detects public vs paid RPC and applies adaptive settings:
 
-- **Public RPC** (`api.mainnet-beta.solana.com` etc.): sequential fetching, 1.0s per-request delay, 5s HTTP timeout (fail fast on hangs), 10s loop-level pause on first 429
+- **Public RPC** (`api.mainnet-beta.solana.com` etc.): sequential fetching, 0.5s per-request delay, 5s HTTP timeout (fail fast on hangs), 10s loop-level pause on first 429
 - **Paid RPC** (Helius, QuickNode, etc.): parallel batching of 20 requests, 30s HTTP timeout
 
 `get_client(profile)` caches clients by `url:timeout` key — public and paid profiles get separate client instances.
 
-## Partial Results on Timeout
+## Timeout Strategy
 
-Swaps are processed inline during the fetch loop (`_fetch_sequential`, `_fetch_with_semaphore`) — not in a post-fetch batch pass. This ensures partial results survive timeouts. When `asyncio.wait_for` raises `TimeoutError`:
+Wallet address is validated with `Pubkey.from_string()` in `process_wallet()` **before** any RPC calls or timeout tracking — invalid addresses fail immediately, not after the full process timeout.
 
+Timeout is tracked per-iteration using `time.monotonic()` in `_fetch_sequential` and `_fetch_parallel`. When elapsed time exceeds `PROCESS_TIMEOUT` (default 120s):
+
+- The fetch loop breaks gracefully
 - `SwapParser.timed_out` is set to `True`
 - Server response includes `"partial": true` and `"partial_reason"` describing the timeout
 - Already-processed swaps are returned; un-fetched signatures are silently dropped
+
+Swaps are processed inline during the fetch loop (`_fetch_sequential`, `_fetch_with_semaphore`) — not in a post-fetch batch pass. This ensures partial results survive timeouts.
 
 ## Architecture
 
@@ -72,12 +77,13 @@ Constants (DEX_PROGRAMS, TOKEN_SYMBOLS, etc.) live in `swap_parser.py`, not a se
 
 ## Key Gotchas
 
-- Solana public RPC rate-limits to 10 requests/window — sequential fetching with 1s delay is used for public RPC
+- Solana public RPC rate-limits to 10 requests/window — sequential fetching with 0.5s delay is used for public RPC
 - Swaps are processed inline during fetch loop — `processed_transactions` accumulate as each transaction is fetched, not after all fetches complete
 - `_get_transaction_details` returns `(dict | None, bool)` — callers must check `is not None`, not truthiness of first element
 - `_env()` in provider.py returns fallback when env var is empty string (not just unset)
 - DEX program IDs in `swap_parser.py` must match actual on-chain addresses — stale IDs break detection
 - **solana-py 0.40 requires `Signature` objects**: `get_transaction()` and `get_signatures_for_address()` require `solders.signature.Signature`, not strings. Convert via `Signature.from_string(sig_str)` before passing to RPC calls.
 - **Response parsing uses `.value`**: `GetSignaturesForAddressResp` and `GetTransactionResp` both use `.value` attribute (not `.result`). Never check `hasattr(result, 'result')` for signatures response.
-- **Upfront wallet validation**: Always validate with `Pubkey.from_string()` before RPC calls — invalid addresses waste ~7s per retry cycle (3 attempts × exponential backoff).
+- **Upfront wallet validation**: `process_wallet()` validates with `Pubkey.from_string()` before any RPC calls or timeout tracking — invalid addresses fail immediately.
+- **Timeout via `time.monotonic()`**: `_fetch_sequential` and `_fetch_parallel` check `time.monotonic() - start_time >= PROCESS_TIMEOUT` per iteration. When mocking for tests, patch `wallet_analytics_mcp.swap_parser.time.monotonic` with increasing values to simulate elapsed time.
 - **MagicMock陷阱**: `MagicMock(spec=AsyncClient)` auto-creates `.result` attribute, causing `hasattr(result, 'result')` to return True even when the real response uses `.value`. Access `.value` directly.
